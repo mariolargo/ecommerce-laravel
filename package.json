@@ -1,0 +1,28 @@
+{
+  "name": "profile",
+  "version": "1.0.0",
+  "description": "<p align=\"center\">   <img src=\"./assets/github-cover.jpg\" alt=\"Coding and coffee are the perfect duo\" title=\"Coding and coffee are the perfect duo\" width=\"width:100%; max-height:300px; object-fit:cover;\"> </p>",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mariolargo/mariolargo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/mariolargo/mariolargo/issues"
+  },
+  "homepage": "https://github.com/mariolargo/mariolargo#readme",
+  "dependencies": {
+    "@semantic-release/changelog": "^7.0.0",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/git": "^11.0.0",
+    "@semantic-release/github": "^12.0.9",
+    "@semantic-release/release-notes-generator": "^14.1.1"
+  }
+}
