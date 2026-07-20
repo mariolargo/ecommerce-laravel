@@ -1,0 +1,99 @@
+services:
+  web:
+    build:
+      context: . # Root folder is the build context
+      dockerfile: ./docker/nginx/Dockerfile.prod
+      target: production
+    restart: unless-stopped
+    volumes:
+      - laravel-storage-prod:/var/www/html/storage:ro
+    networks:
+      - laravel-prod
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    depends_on:
+      php-fpm:
+        condition: service_healthy # Wait for php-fpm health check
+
+  php-fpm:
+    build:
+      context: . # Root folder is the build context
+      dockerfile: ./docker/php/Dockerfile.prod
+      target: production # Use the 'production' stage in the Dockerfile
+    restart: unless-stopped
+    volumes:
+      - laravel-storage-prod:/var/www/html/storage:rw # Mount the storage volume
+    networks:
+      - laravel-prod
+    environment:
+      - APP_KEY=${APP_KEY}
+    healthcheck:
+      test: ["CMD-SHELL", "php-fpm-healthcheck || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    user: postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DATABASE}
+      - POSTGRES_USER=${POSTGRES_USERNAME}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data-prod:/var/lib/postgresql
+    networks:
+      - laravel-prod
+    # Health check for PostgreSQL
+    # -----------------------------------------------------------
+    # Health checks allow Docker to determine if a service is operational.
+    # The 'pg_isready' command checks if PostgreSQL is ready to accept connections.
+    # This prevents dependent services from starting before the database is ready.
+    # -----------------------------------------------------------
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped # Automatically restart unless the service is explicitly stopped
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - laravel-prod
+    # Health check for Redis
+    # -----------------------------------------------------------
+    # Checks if Redis is responding to the 'PING' command.
+    # This ensures that the service is not only running but also operational.
+    # -----------------------------------------------------------
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  #adminer:
+  #  image: adminer
+  #  restart: unless-stopped
+  #  ports:
+  #    - "${ADMINER_PORT:-8080}:8080"
+
+networks:
+  laravel-prod:
+
+volumes:
+  postgres-data-prod:
+  laravel-storage-prod:
+  redis-data:

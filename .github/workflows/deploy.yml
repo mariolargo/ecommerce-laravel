@@ -1,0 +1,55 @@
+name: Deploy Laravel Application to EC2 via SSH
+
+on:
+  push:
+    branches: ["develop"] # Triggers the workflow whenever code is pushed to main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Execute Remote SSH Commands
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            #!/bin/bash
+            set -e
+
+            # Before running the workflow for the first time, manually SSH into your EC2 server to set up the environment
+            # git clone https://github.com your-laravel-project-folder
+
+            # Navigate to application directory
+            cd /var/www/ecommerce-laravel
+
+            # Activate maintenance mode
+            php artisan down --refresh=15 || true
+
+            # Pull latest changes from git
+            git checkout develop
+            git fetch --all
+            git reset --hard origin/develop
+            git pull origin develop
+
+            # Install updated dependencies (production optimized)
+            composer clear-cache
+            composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+            # Run safe database migrations
+            php artisan migrate --force            
+
+            # Clear existing caches and rebuild production caches
+            php artisan optimize:clear
+            php artisan optimize
+            php artisan config:cache
+            php artisan route:cache
+
+            # Turn off maintenance mode
+            php artisan up
