@@ -1,55 +1,50 @@
-name: Deploy Application to EC2 via SSH
-
+name: Deploy to AWS Elastic Beanstalk
 on:
   push:
-    branches: ["develop"] # Triggers the workflow whenever code is pushed to main
+    branches: [develop]
+
+env:
+  AWS_REGION: us-east-1
+  APPLICATION_NAME: ecommerce
+  ENVIRONMENT_NAME: Ecommerce-env
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout source code
+        uses: actions/checkout@v6
 
-      - name: Execute Remote SSH Commands
-        uses: appleboy/ssh-action@v1
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          script: |
-            #!/bin/bash
-            set -e
+          # OIDC - IAM Role:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }} # us-east-1
 
-            # Before running the workflow for the first time, manually SSH into your EC2 server to set up the environment
-            # git clone https://github.com your-laravel-project-folder
-
-            # Navigate to application directory
-            cd /var/www/ecommerce-laravel
-
-            # Activate maintenance mode
-            php artisan down --refresh=15 || true
-
-            # Pull latest changes from git
-            git checkout develop
-            git fetch --all
-            git reset --hard origin/develop
-            git pull origin develop
-
-            # Install updated dependencies (production optimized)
-            composer clear-cache
-            composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
-
-            # Run safe database migrations
-            php artisan migrate --force            
-
-            # Clear existing caches and rebuild production caches
-            php artisan optimize:clear
-            php artisan optimize
-            php artisan config:cache
-            php artisan route:cache
-
-            # Turn off maintenance mode
-            php artisan up
+      - name: Deploy to AWS Elastic BeansTalk
+        uses: aws-actions/aws-elasticbeanstalk-deploy@v1 # Compress repo & generate deployment package, uploads it to S3, and deploys it to AWS EB
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          application-name: ${{ env.APPLICATION_NAME }}
+          environment-name: ${{ env.ENVIRONMENT_NAME }}
+          version-label: "app-${{ github.sha }}"
+          deployment_package: deploy.zip
+          solution-stack-name: "64bit Amazon Linux 2023 v4.13.4 running Docker"
+          option-settings: |
+            [
+              {
+                "Namespace": "aws:autoscaling:launchconfiguration",
+                "OptionName": "IamInstanceProfile",
+                "Value": "aws-elasticbeanstalk-ec2-role"
+              },
+              {
+                "Namespace": "aws:elasticbeanstalk:environment",
+                "OptionName": "ServiceRole",
+                "Value": "aws-elasticbeanstalk-service-role"
+              }   
+            ]
