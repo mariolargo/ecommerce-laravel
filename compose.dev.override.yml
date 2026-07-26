@@ -1,0 +1,9 @@
+services:
+  redis:
+    volumes:
+      - ./docker/redis/data:/data
+    networks:
+      - laravel-net
+  adminer:
+    networks:
+      - laravel-net

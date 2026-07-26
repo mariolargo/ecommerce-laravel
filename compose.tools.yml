@@ -1,0 +1,14 @@
+services:
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    container_name: laravel-adminer
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped # Automatically restart unless the service is explicitly stopped
+    container_name: laravel-redis
+    ports:
+      - "6379:6379"

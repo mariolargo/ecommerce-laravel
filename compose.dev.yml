@@ -1,0 +1,77 @@
+include:
+  - path:
+      - compose.tools.yml
+      - compose.dev.override.yml
+
+services:
+  # PHP Application
+  app:
+    build:
+      args:
+        - user=${USER:-developer}
+        - uid=${UID:-1000}
+        - gid=${GID:-1000}
+      context: ./docker/php
+    container_name: laravel-app
+    restart: unless-stopped
+    environment:
+      - APP_KEY=${APP_KEY}
+    volumes:
+      - ./src:/var/www/html
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "9000:9000"
+    networks:
+      - laravel-net
+
+  # Nginx Web Server
+  webserver:
+    build:
+      context: ./docker/proxy
+    restart: unless-stopped
+    container_name: laravel-nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_PORT_SSL:-443}:443"
+    volumes:
+      - ./src:/var/www/html
+    networks:
+      - laravel-net
+
+  # MySQL Database
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    container_name: laravel-db
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_USER: ${DB_USERNAME}
+    volumes:
+      - dbdata:/var/lib/mysql
+    networks:
+      - laravel-net
+
+  # Optional
+  #node:
+  #  image: node:18
+  #  container_name: laravel-node
+  #  working_dir: /var/www/html
+  #  volumes:
+  #    - ./src:/var/www/html
+  #  command: sh -c "npm install && npm run dev"
+  #  networks:
+  #    - laravel-net
+
+networks:
+  laravel-net:
+    driver: bridge
+
+volumes:
+  dbdata:
+    driver: local

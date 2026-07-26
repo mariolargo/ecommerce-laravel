@@ -11,4 +11,7 @@ RUN if [ ! -f /etc/ssl/certs/self-signed.crt ]; then \
       -subj '/C=US/ST=State/L=City/O=Organization/OU=Department/CN=localhost'; \
     fi
 
+# Copy configuration files
+COPY ./sites-available/default.conf /etc/nginx/conf.d/
+
 WORKDIR /var/www/html

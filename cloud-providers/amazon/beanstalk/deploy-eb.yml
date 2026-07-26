@@ -1,0 +1,70 @@
+name: Deploy to AWS Elastic Beanstalk
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch: # Allows manual triggering
+
+env:
+  AWS_REGION: us-east-1
+  APPLICATION_NAME: ecommerce
+  ENVIRONMENT_NAME: Ecommerce-env
+
+# OIDC permissions for keyless authentication
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Generate Deployment Package
+        run: |
+          zip -r deploy.zip src/ docker/ .ebextensions/ .platform/ -x "*.git*" "*.md*" compose.yml .dockerignore package.json package-lock.json
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Static Credentials - IAM user:
+          #aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          #aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # OIDC - IAM Role:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: GitHubActions-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }} # us-east-1
+
+      - name: Test Authentication
+        run: aws sts get-caller-identity
+
+      - name: Deploy to AWS Elastic BeansTalk
+        uses: aws-actions/aws-elasticbeanstalk-deploy@v1 # Compress repo & generate deployment package, uploads it to S3, and deploys it to AWS EB
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          application-name: ${{ env.APPLICATION_NAME }}
+          environment-name: ${{ env.ENVIRONMENT_NAME }}
+          version-label: "docker-${{ github.sha }}"
+          deployment_package: deploy.zip
+          solution-stack-name: "64bit Amazon Linux 2023 v4.13.4 running Docker"
+          option-settings: |
+            [
+              {
+                "Namespace": "aws:autoscaling:launchconfiguration",
+                "OptionName": "IamInstanceProfile",
+                "Value": "aws-elasticbeanstalk-ec2-role"
+              },
+              {
+                "Namespace": "aws:elasticbeanstalk:environment",
+                "OptionName": "ServiceRole",
+                "Value": "aws-elasticbeanstalk-service-role"
+              }
+            ]

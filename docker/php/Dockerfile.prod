@@ -1,0 +1,120 @@
+# Stage 1: Build environment and Composer dependencies
+FROM php:8.5-fpm AS builder
+# FROM public.ecr.aws/docker/library/php:fpm
+
+ARG user=www-data
+
+# Install extensions
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl \
+    libpq-dev \
+    libonig-dev \
+    libpng-dev \    
+    libssl-dev \
+    libxml2-dev \
+    libcurl4-openssl-dev \
+    libicu-dev \
+    zip unzip libzip-dev \
+    && docker-php-ext-install -j$(nproc) \
+    pdo_mysql \
+    pdo_pgsql \
+    pgsql \
+    intl \
+    bcmath \
+    soap \
+    && apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Install the Redis extension via PECL and then enable it
+RUN pecl install redis \ 
+    && docker-php-ext-enable redis
+
+# Install PHP extensions required for Laravel
+RUN docker-php-ext-install curl pdo_mysql mbstring exif pcntl bcmath gd zip \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY ./docker/php/conf.d/*.ini ${PHP_INI_DIR}/conf.d/
+
+WORKDIR /var/www/html
+
+# Copy existing application directory contents
+# --------------------------------------------
+# In Laravel, `composer install` may trigger scripts
+# needing access to application code.
+#
+# By copying the entire application code before running
+# `composer install`, we ensure that all necessary files are
+# available, allowing these scripts to run successfully.
+COPY ./src /var/www/html
+
+# Install Composer and dependencies
+# COPY --from=public.ecr.aws/composer/composer:latest-bin /usr/bin/composer /usr/bin/composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer \
+    && composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist
+
+# Create a system user for running Composer and Artisan commands
+RUN mkdir -p /home/$user/.composer && \
+    chown -R $user:$user /home/$user
+
+# Stage 2: Production environment
+FROM php:8.5-fpm AS production
+
+# Install only runtime libraries needed in production
+# libfcgi-bin and procps are required for the php-fpm-healthcheck script
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    acl \
+    libpq-dev \
+    libicu-dev \
+    libzip-dev \
+    libfcgi-bin \
+    procps \
+    && apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Install php-fpm health check script
+COPY --chmod=755 ./docker/php/scripts/php-fpm-healthcheck /usr/local/bin/
+
+# Copy the initialization script
+COPY --chmod=755 ./docker/php/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# Copy the initial storage structure
+COPY --chmod=775 ./src/storage /var/www/html/storage-init
+
+# Copy PHP extensions and libraries from the builder stage
+COPY --from=builder /usr/local/lib/php/extensions/ /usr/local/lib/php/extensions/
+COPY --from=builder ${PHP_INI_DIR}/conf.d/ ${PHP_INI_DIR}/conf.d/
+
+RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" && \
+    rm "$PHP_INI_DIR/conf.d/local.ini"
+
+# Add pool overrides
+COPY ./docker/php/pool.d/z-overrides.conf /usr/local/etc/php-fpm.d/
+
+# Copy the application code and dependencies from the build stage
+COPY --chown=$user:$user --from=builder /var/www/html /var/www/html
+
+# Check missing folders, storage/logs/laravel.log
+RUN mkdir -p /var/www/html/storage/framework/cache && \
+    mkdir -p /var/www/html/storage/framework/sessions && \
+    mkdir -p /var/www/html/storage/framework/views && \
+    touch /var/www/html/storage/logs/laravel.log
+
+# Set proper permissions
+RUN chown -R $user:$user /var/www/html && \
+    find /var/www/html -type d -exec chmod 775 {} \; && \
+    find /var/www/html -type f -exec chmod 664 {} \; && \ 
+    chmod -R g+w /var/www/html/storage /var/www/html/bootstrap/cache && \
+    chown -R $user:$user storage bootstrap/cache && \
+    chown $user:$user /var/www/html/storage/logs/laravel.log && \
+    chmod 777 /var/www/html/storage/logs/laravel.log && \    
+    setfacl -R -d -m g::rwx storage && setfacl -R -d -m g::rwx bootstrap/cache
+
+# Set working directory
+WORKDIR /var/www/html
+
+# Change the default command to run the entrypoint script
+ENTRYPOINT ["entrypoint.sh"]
+
+# Expose port 9000
+EXPOSE 9000
+
+# Start php-fpm server
+CMD ["php-fpm", "-F"]
