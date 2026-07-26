@@ -1,0 +1,39 @@
+# This replace the legacy Dockerrun.aws.json file
+version: "3.8"
+services:
+  web:
+    image: <AWS_ACCOUNT_ID>.dkr.ecr.<REGION>://<REPOSITORY_NAME>:<TAG>
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      php-fpm:
+        condition: service_healthy
+    volumes:
+      - laravel-storage-prod:/var/www/html/storage:ro
+  php-fpm:
+    image: <AWS_ACCOUNT_ID>.dkr.ecr.<REGION>://<REPOSITORY_NAME>:<TAG>
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - laravel-storage-prod:/var/www/html/storage:rw
+    environment:
+      - APP_KEY=${APP_KEY}
+    healthcheck:
+      test: ["CMD-SHELL", "php-fpm-healthcheck || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
